@@ -1,6 +1,10 @@
 # Spec: Google Maps "Dead-Link Rescue" Scout
 
-Version 1.0 · 2026-10-17. Written for any coding agent (Mode A) or browsing agent (Mode B).
+Version 1.1 · 2026-10-17. Written for any coding agent (Mode A) or browsing agent (Mode B).
+
+**Changes in 1.1:** added an audio & creative category group with a "home turf" fit bonus, a remote
+multi-city mode (outreach is by message, not calls), an optional `contact_channels` field, and
+Appendix D, the rules for preview pages and first contact.
 
 **Mission.** Find **10 real, currently operating local businesses** whose Google Maps listing sends
 customers to a broken or missing website. Rank them by how badly they need a fix and how likely they
@@ -16,11 +20,11 @@ fix. **We never buy the business's domain.**
 
 | Input | Default | Notes |
 |---|---|---|
-| `TOWNS` | **must be filled in** | 3–5 towns, e.g. `"Visalia, CA"`. Prefer mid-size towns (50k–300k people) within driving distance of the project owner, because calls and visits convert better locally. |
+| `TOWNS` | **must be filled in** | **Local mode:** 3–5 mid-size towns (50k–300k people) near the owner, e.g. `"Visalia, CA"`. **Remote mode** (outreach by email or DM, no calls): 10–20 metros, because audio businesses are sparse in any one town. |
 | `CATEGORIES` | see §1.1 | Search phrases, not Places type IDs. |
 | `MIN_REVIEWS` | 20 | Shows the business gets real customer traffic. |
 | `MIN_RATING` | 3.5 | Drop listings that have no rating. |
-| `MAX_SEARCH_CALLS` | 150 | Hard cost limit on Places API calls (§4.1). |
+| `MAX_SEARCH_CALLS` | 150 (remote mode: up to 400) | Hard cost limit on Places API calls (§4.1). Even 400 stays under the roughly 1,000 free Enterprise calls a month Google reportedly allows. |
 | `TARGET_CONTENDERS` | 10 | |
 | `MAX_PER_CATEGORY` / `MAX_PER_TOWN` | 3 / 4 | Keeps the list varied. |
 | `EXCLUDED_CATEGORIES` | locksmith, garage door repair, towing, water damage restoration | These categories are full of fake lead-generation listings. |
@@ -29,11 +33,14 @@ fix. **We never buy the business's domain.**
 
 | Ticket | Categories |
 |---|---|
-| High (10 pts) | roofing contractor, HVAC contractor, plumber, electrician, tree service, concrete contractor, fence contractor, auto body shop |
+| High (10 pts) | roofing contractor, HVAC contractor, plumber, electrician, tree service, concrete contractor, fence contractor, auto body shop, foundation repair, epoxy flooring contractor, custom cabinet maker, med spa |
 | Mid (6 pts) | auto repair shop, landscaper, house painter, pest control service, house cleaning service, carpet cleaning service, chiropractor |
 | Low (3 pts) | dog groomer, hair salon, barber shop |
+| **Audio & creative (home turf)** | recording studio, mastering studio, rehearsal studio, guitar repair shop, musical instrument repair, sound equipment rental (PA/backline), live music venue. Scored as mid ticket (6 pts) **plus a +5 fit bonus** (§4.5): the owner works in audio, which makes the pitch more credible. |
 
-Default run: pick about 8 categories × 4 towns = 32 queries × up to 3 pages, so at most 96 calls.
+Default local run: about 8 categories × 4 towns = 32 queries × up to 3 pages, so at most 96 calls.
+Default remote run: the 7 audio categories × 15 metros = 105 queries, so at most 315 calls with all pages
+(usually fewer, since niche queries rarely fill 3 pages).
 
 ---
 
@@ -200,7 +207,9 @@ registrar name, the RDAP URL that answered and `retrieved_at`.
 
 ### 4.5 Scoring (0–100)
 
-`score = S (problem severity) + B (business strength) + T (ticket size) + U (urgency)`
+`score = min(100, S (problem severity) + B (business strength) + T (ticket size) + U (urgency) + F (fit))`
+
+F = 5 for the audio & creative categories in §1.1, otherwise 0.
 
 | Component | Values |
 |---|---|
@@ -283,9 +292,16 @@ contenders_selected, false_positives_on_recheck`
     "retrieved_at": "2026-10-18T17:02:15Z"
   },
   "pitch_angle": "see Appendix B",
+  "contact_channels": [
+    {"type": "phone", "value": "(559) 555-0100", "source": "places.nationalPhoneNumber"},
+    {"type": "instagram", "value": "@exampleplumbing", "source_url": "https://www.instagram.com/exampleplumbing/"}
+  ],
   "human_verified": null
 }
 ```
+
+`contact_channels` is optional. Each entry must name where it was seen (a Places field or a public page
+URL). Never guess email addresses or invent handles.
 
 Required, never `"NOT OBSERVED"`: `place.id`, `place.maps_url`, `place.name`, `place.review_count`,
 `website.listed_url` (or `null` for `NO_WEBSITE`), `website.label`, and, for every label except
@@ -476,16 +492,19 @@ These are starting points. Extend them from real false negatives, and add a fixt
 ## Appendix C: Example `config.yaml`
 
 ```yaml
-towns: ["<Town 1, ST>", "<Town 2, ST>", "<Town 3, ST>", "<Town 4, ST>"]
+mode: remote            # local | remote
+towns: ["<Metro 1, ST>", "<Metro 2, ST>", "<Metro 3, ST>"]   # local: 3–5 nearby towns; remote: 10–20 metros
 categories:
-  high: [roofing contractor, HVAC contractor, plumber, electrician, tree service, concrete contractor, fence contractor, auto body shop]
+  high: [roofing contractor, HVAC contractor, plumber, electrician, tree service, concrete contractor, fence contractor, auto body shop, foundation repair, epoxy flooring contractor, custom cabinet maker, med spa]
   mid:  [auto repair shop, landscaper, house painter, pest control service, house cleaning service, carpet cleaning service, chiropractor]
   low:  [dog groomer, hair salon, barber shop]
-run_categories: [plumber, roofing contractor, HVAC contractor, electrician, tree service, auto repair shop, house cleaning service, landscaper]
+  home_turf: [recording studio, mastering studio, rehearsal studio, guitar repair shop, musical instrument repair, sound equipment rental, live music venue]
+fit_bonus_categories: home_turf
+run_categories: [recording studio, mastering studio, rehearsal studio, guitar repair shop, musical instrument repair, sound equipment rental, live music venue]
 excluded_categories: [locksmith, garage door repair, towing, water damage restoration]
 min_reviews: 20
 min_rating: 3.5
-max_search_calls: 150
+max_search_calls: 400   # local mode: 150
 target_contenders: 10
 max_per_category: 3
 max_per_town: 4
@@ -497,3 +516,41 @@ fetch:
   concurrency: 5
 recheck_min_hours: 6
 ```
+
+---
+
+## Appendix D: Preview pages and first contact (the outreach step, done by hand)
+
+The scout never builds pages or sends messages. These rules are for the owner's next step, when
+pitching a business with a ready-made preview page instead of a phone call.
+
+**What a preview page may contain**
+- Facts the business publishes itself: name, phone, service area or address, hours, the services it
+  offers.
+- Your own copy and layout, and neutral stock imagery or none.
+- A **Google Maps Embed** iframe (`/maps/embed/v1/place?q=place_id:<id>`) to show the real listing and
+  rating. It's free with unlimited usage and is the permitted way to show Google's data.
+
+**What it must not contain**
+- **Copied Google reviews or photos.** Places API policy allows storing only place IDs, and reviews and
+  photos must be shown with their author attribution. Copying them into a static page breaks both rules,
+  and the review text belongs to its authors.
+- The business's logo or anything implying the page is theirs.
+
+**How to host it**
+- Use an unguessable URL, a `<meta name="robots" content="noindex,nofollow">` tag and a robots.txt
+  disallow, so the page never shows up in search results.
+- Show a visible banner: "Unofficial preview prepared for {Business} by {your name}. Not affiliated.
+  Removed on request."
+- Delete it after 14 days, or immediately if the business asks.
+- No forms that collect customer data. Click-to-call goes to the business's real number.
+
+**First contact**
+- Use email (from a public profile or directory page) or an Instagram/Facebook DM. Send **one** message
+  plus at most one follow-up, with an opt-out line.
+- **Don't cold-message on WhatsApp.** WhatsApp requires the recipient's opt-in for business messages, and
+  unsolicited messages get numbers restricted.
+- Follow the cold-email rules where the business is located. CAN-SPAM in the US: honest subject line,
+  postal address, working opt-out. EU and UK rules are stricter, especially for sole traders.
+- Lead with the problem and the screenshot. The preview link is proof of work, not pressure. Price
+  stays flat ($250–$400) and the business owns every account it ends up using.
